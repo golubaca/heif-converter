@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function ConvertFile(arg1:string):Promise<main.FileConversionInfo>;
 
+export function ConvertMultipleFiles(arg1:Array<string>):Promise<main.ConversionResult>;
+
 export function Greet(arg1:string):Promise<string>;
 
 export function OpenFilePicker():Promise<Array<string>>;

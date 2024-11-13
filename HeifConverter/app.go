@@ -7,6 +7,7 @@ import (
 	"image/jpeg"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/golubaca/goheif"
@@ -26,12 +27,61 @@ type FileConversionInfo struct {
 	Thumbnail        []byte
 }
 
+type ConversionResult struct {
+	Error     error
+	TotalTime time.Duration
+}
+
 func NewApp() *App {
 	return &App{}
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+}
+
+func (a *App) ConvertMultipleFiles(filePaths []string) ConversionResult {
+	startTime := time.Now()
+	resultsChan := make(chan FileConversionInfo, len(filePaths))
+	var wg sync.WaitGroup
+
+	for i, path := range filePaths {
+		wg.Add(1)
+		go func(index int, filePath string) {
+			defer wg.Done()
+			result, err := a.ConvertFile(filePath)
+			if err != nil {
+				runtime.EventsEmit(a.ctx, "conversion_error", map[string]interface{}{
+					"path":  filePath,
+					"error": err.Error(),
+				})
+				return
+			}
+			resultsChan <- result
+			runtime.EventsEmit(a.ctx, "conversion_progress", result)
+		}(i, path)
+	}
+
+	// Close channel after all goroutines complete
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	// Collect results from channel
+	var results []FileConversionInfo
+	for result := range resultsChan {
+		results = append(results, result)
+	}
+
+	conversionTime := time.Since(startTime)
+	finalResult := ConversionResult{
+		Error:     nil,
+		TotalTime: time.Duration(conversionTime.Milliseconds()),
+	}
+
+	runtime.EventsEmit(a.ctx, "conversion_complete", finalResult)
+	return finalResult
 }
 
 func (a *App) OpenFilePicker() ([]string, error) {

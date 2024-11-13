@@ -6,6 +6,10 @@ export function ConvertFile(arg1) {
   return window['go']['main']['App']['ConvertFile'](arg1);
 }
 
+export function ConvertMultipleFiles(arg1) {
+  return window['go']['main']['App']['ConvertMultipleFiles'](arg1);
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }

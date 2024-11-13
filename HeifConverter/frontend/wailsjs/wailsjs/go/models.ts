@@ -1,5 +1,19 @@
 export namespace main {
 	
+	export class ConversionResult {
+	    Error: any;
+	    TotalTime: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ConversionResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Error = source["Error"];
+	        this.TotalTime = source["TotalTime"];
+	    }
+	}
 	export class FileConversionInfo {
 	    OriginalFileName: string;
 	    OriginalFileSize: number;
