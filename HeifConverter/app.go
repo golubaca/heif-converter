@@ -1,13 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image/jpeg"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/h2non/bimg"
+	"github.com/golubaca/goheif"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -57,26 +59,44 @@ func (a *App) OpenFilePicker() ([]string, error) {
 
 func (a *App) ConvertFile(filePath string) (FileConversionInfo, error) {
 	startTime := time.Now()
+	fi, err := os.Open(filePath)
+	if err != nil {
+		return FileConversionInfo{}, err
+	}
+	defer fi.Close()
 
-	buffer, err := os.ReadFile(filePath)
+	exif, err := goheif.ExtractExif(fi)
 	if err != nil {
 		return FileConversionInfo{}, err
 	}
 
-	image := bimg.NewImage(buffer)
-	jpeg, err := image.Convert(bimg.JPEG)
+	img, err := goheif.Decode(fi)
 	if err != nil {
 		return FileConversionInfo{}, err
 	}
 
+	// Create JPEG in memory
+	var jpegBuffer bytes.Buffer
+	err = jpeg.Encode(&jpegBuffer, img, nil)
+	if err != nil {
+		return FileConversionInfo{}, err
+	}
+
+	// Get JPEG bytes and insert EXIF
+	jpegBytes := jpegBuffer.Bytes()
+	// Replace with actual EXIF data
+	finalJpegBytes := insertExif(jpegBytes, exif)
+
+	// Create output directory
 	convertDir := filepath.Join(filepath.Dir(filePath), "convert")
 	err = os.MkdirAll(convertDir, os.ModePerm)
 	if err != nil {
 		return FileConversionInfo{}, err
 	}
 
+	// Write final JPEG with EXIF to file
 	outputFilePath := filepath.Join(convertDir, filepath.Base(filePath)+".jpg")
-	err = os.WriteFile(outputFilePath, jpeg, 0644)
+	err = os.WriteFile(outputFilePath, finalJpegBytes, 0644)
 	if err != nil {
 		return FileConversionInfo{}, err
 	}
@@ -91,12 +111,6 @@ func (a *App) ConvertFile(filePath string) (FileConversionInfo, error) {
 		return FileConversionInfo{}, err
 	}
 
-	// Generate thumbnail
-	thumbnail, err := bimg.NewImage(jpeg).Resize(200, 200)
-	if err != nil {
-		return FileConversionInfo{}, err
-	}
-
 	conversionTime := time.Since(startTime)
 
 	return FileConversionInfo{
@@ -104,9 +118,33 @@ func (a *App) ConvertFile(filePath string) (FileConversionInfo, error) {
 		OriginalFileSize: originalFileInfo.Size(),
 		NewFileName:      outputFilePath,
 		NewFileSize:      newFileInfo.Size(),
-		ConversionTime:   conversionTime,
-		Thumbnail:        thumbnail,
+		ConversionTime:   time.Duration(conversionTime.Milliseconds()),
+		Thumbnail:        nil,
 	}, nil
+}
+func insertExif(jpegData []byte, exifData []byte) []byte {
+	// Find the start of image marker
+	soi := []byte{0xFF, 0xD8}
+
+	// If the JPEG doesn't start with SOI marker, return original
+	if len(jpegData) < 2 || !bytes.Equal(jpegData[0:2], soi) {
+		return jpegData
+	}
+
+	// Create EXIF segment
+	exifHeader := []byte{0xFF, 0xE1}
+	exifSize := uint16(len(exifData) + 2) // +2 for size bytes
+	exifSizeBytes := []byte{byte(exifSize >> 8), byte(exifSize & 0xFF)}
+
+	// Combine all parts
+	result := make([]byte, 0, len(jpegData)+len(exifData)+4)
+	result = append(result, soi...)
+	result = append(result, exifHeader...)
+	result = append(result, exifSizeBytes...)
+	result = append(result, exifData...)
+	result = append(result, jpegData[2:]...)
+
+	return result
 }
 
 // domReady is called after front-end resources have been loaded
