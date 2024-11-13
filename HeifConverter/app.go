@@ -104,7 +104,7 @@ func (a *App) ConvertFile(filePath string) (FileConversionInfo, error) {
 		OriginalFileSize: originalFileInfo.Size(),
 		NewFileName:      outputFilePath,
 		NewFileSize:      newFileInfo.Size(),
-		ConversionTime:   conversionTime,
+		ConversionTime:   time.Duration(conversionTime.Milliseconds()),
 		Thumbnail:        thumbnail,
 	}, nil
 }
